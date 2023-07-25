@@ -70,7 +70,7 @@ const fetchNftInfo = (mint) => __awaiter(void 0, void 0, void 0, function* () {
         }
         `,
         variables: {
-            "mint": mint
+            "mint": mint.toString()
         },
     });
     const result = resp.data.mint;
@@ -90,8 +90,8 @@ const fetchNftMintProof = (mint, whitelist) => __awaiter(void 0, void 0, void 0,
         }
         `,
         variables: {
-            "mints": [mint],
-            "whitelist": whitelist
+            "mints": [mint.toString()],
+            "whitelist": whitelist.toString()
         },
     });
     const result = resp.data.tswapMintProofs[0];

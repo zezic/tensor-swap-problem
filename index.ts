@@ -1,3 +1,4 @@
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { AnchorProvider, Wallet, BN } from "@project-serum/anchor";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
 import { TensorSwapSDK, TensorWhitelistSDK, computeTakerPrice, TakerSide, castPoolConfigAnchor, findWhitelistPDA, PoolType } from "@tensor-oss/tensorswap-sdk";
@@ -24,11 +25,18 @@ const main = async () => {
     const swapSdk = new TensorSwapSDK({ provider });
     const wlSdk = new TensorWhitelistSDK({ provider });
 
-    const nftMint = "6FSB6y9yjUcCGrFbibBq9jHFhAwxSuXCgS8jLikCuNV7";
-    const nftATA = "F37fdfmun42ATgzxQ4gpVc2UBvTVLsPAvnKP6ZcQsior";
+    // SSS
+    // const nftMint = new PublicKey("6FSB6y9yjUcCGrFbibBq9jHFhAwxSuXCgS8jLikCuNV7");
+
+    // Toonies
+    const nftMint = new PublicKey("F5ywgtM6uz8sSaGqmdiZaeV9Sx5cwVrwehUP2sxoH63w");
+
+    const nftATA = getAssociatedTokenAddressSync(
+        nftMint,
+        keypair.publicKey
+    );
 
     const nftInfo = await fetchNftInfo(nftMint);
-    console.log("NFT info", nftInfo);
 
     const tswapOrder = nftInfo.tswapOrders.pop();
 
@@ -36,8 +44,6 @@ const main = async () => {
         console.error("No orders");
         return;
     }
-
-    console.log("Order", tswapOrder);
 
     if (nftInfo.collection === undefined || nftInfo.collection === null) {
         console.error("Can't find collection");
@@ -49,7 +55,6 @@ const main = async () => {
         return;
     }
 
-    console.log("Parsing UUID", nftInfo.collection.id);
     const collectionUUIDString = nftInfo.collection.id;
 
     // Remove "-" symbols from uuid, so it's within the 32 seed length limit. Additionally convert the uuid to a Uint8Array
@@ -57,10 +62,8 @@ const main = async () => {
 
     // Fetch the pool PDA for its settings.
     const pool = await swapSdk.fetchPool(new PublicKey(tswapOrder.address));
-    console.log("Pool:", pool);
 
     const config = castPoolConfigAnchor(pool.config);
-    console.log("Config:", config);
 
     const price = computeTakerPrice({
         takerSide: TakerSide.Sell, // or TakerSide.Sell for selling
@@ -77,11 +80,7 @@ const main = async () => {
         marginated: pool.margin == null ? false : true
     });
 
-    console.log("Price", price);
-
     const wlAddr = findWhitelistPDA({uuid: collectionUUID})[0];
-
-    console.log("Whitelist", wlAddr);
 
     const allIxs = [];
 
@@ -89,13 +88,11 @@ const main = async () => {
     {
         const whitelist = await wlSdk.fetchWhitelist(wlAddr);
 
-        console.log("Whitelist:", whitelist);
-
         // Proof is only required if rootHash is NOT a 0 array, o/w not necessary!
         if (JSON.stringify(whitelist.rootHash) !== JSON.stringify(Array(32).fill(0))) {
-            console.log('Fetching proof');
+            console.log('Fetching proof...');
             // Off-chain merkle proof (see "Mint Proof" API endpoint below).
-            const proof = await fetchNftMintProof(nftMint, wlAddr.toString());
+            const proof = await fetchNftMintProof(nftMint, wlAddr);
 
             const user = keypair.publicKey;
             const mint = new PublicKey(nftMint);
@@ -112,37 +109,28 @@ const main = async () => {
         }
     }
 
+    if (config.poolType === PoolType.NFT) {
+        console.error("Unsupported pool type");
+        return;
+    }
+
     // Step 2: Sell Ixs.
     {
         const { tx: { ixs }, } = await swapSdk.sellNft({
             type: config.poolType === PoolType.Token ? "token" : "trade",
             whitelist: wlAddr,
-            nftMint: new PublicKey(nftMint),
-            nftSellerAcc: new PublicKey(nftATA),
-            owner: new PublicKey(pool.owner),
+            nftMint: nftMint,
+            nftSellerAcc: nftATA,
+            owner: pool.owner,
             seller: keypair.publicKey,
             config: pool.config,
-            minPrice: new BN(tswapOrder.sellNowPriceNetFees),
+            minPrice: new BN(tswapOrder.sellNowPriceNetFees * 0.999),
         });
         allIxs.push(...ixs);
     }
 
-    for (let ix of allIxs) {
-        console.log(ix);
-    }
-
     let tx = new Transaction();
-    for (const ix of allIxs) {
-        tx = tx.add(ix);
-    }
-
-    // Impossible, just to make sure TX will fail to not loose my NFT
-    let ix = SystemProgram.transfer({
-        fromPubkey: keypair.publicKey,
-        toPubkey: new PublicKey("2VBw9GvAWhJuGziv5aKjaCWF1X2E6qPd3kqD2eiwJnwx"),
-        lamports: 80000000000000, // 80k SOL
-    });
-    tx.add(ix);
+    tx.add(...allIxs);
 
     // var signature = await sendAndConfirmTransaction(conn, tx, [keypair], { skipPreflight: true });
     var signature = await sendAndConfirmTransaction(conn, tx, [keypair]);

@@ -2,6 +2,7 @@ import { HttpLink, ApolloClient, ApolloLink, InMemoryCache, gql, NormalizedCache
 import fetch from "cross-fetch";
 
 import { MintWithColl, TSwapMintProof } from "./src/generated/graphql"
+import { PublicKey } from "@solana/web3.js";
 
 const createClient = (): ApolloClient<NormalizedCacheObject> => {
     const API_KEY = process.env.TENSOR_API_KEY ?? "";
@@ -33,7 +34,7 @@ const createClient = (): ApolloClient<NormalizedCacheObject> => {
     return client;
 }
 
-const fetchNftInfo = async (mint: string): Promise<MintWithColl> => {
+const fetchNftInfo = async (mint: PublicKey): Promise<MintWithColl> => {
     const client = createClient();
     const resp = await client.query({
         query: gql`
@@ -58,7 +59,7 @@ const fetchNftInfo = async (mint: string): Promise<MintWithColl> => {
         }
         `,
         variables: {
-            "mint": mint
+            "mint": mint.toString()
         },
     });
 
@@ -66,7 +67,7 @@ const fetchNftInfo = async (mint: string): Promise<MintWithColl> => {
     return result;
 };
 
-const fetchNftMintProof = async (mint: string, whitelist: string): Promise<TSwapMintProof> => {
+const fetchNftMintProof = async (mint: PublicKey, whitelist: PublicKey): Promise<TSwapMintProof> => {
     const client = createClient();
     const resp = await client.query({
         query: gql`
@@ -79,8 +80,8 @@ const fetchNftMintProof = async (mint: string, whitelist: string): Promise<TSwap
         }
         `,
         variables: {
-            "mints": [mint],
-            "whitelist": whitelist
+            "mints": [mint.toString()],
+            "whitelist": whitelist.toString()
         },
     });
 
