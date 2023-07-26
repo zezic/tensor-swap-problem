@@ -29,7 +29,7 @@ const main = async () => {
     // const nftMint = new PublicKey("6FSB6y9yjUcCGrFbibBq9jHFhAwxSuXCgS8jLikCuNV7");
 
     // Toonies
-    const nftMint = new PublicKey("F5ywgtM6uz8sSaGqmdiZaeV9Sx5cwVrwehUP2sxoH63w");
+    const nftMint = new PublicKey("6ZGCWMAVXupC4PDiNdZqSVdq8YQ2i2fiyXzCFdt24jEf");
 
     const nftATA = getAssociatedTokenAddressSync(
         nftMint,
@@ -37,6 +37,12 @@ const main = async () => {
     );
 
     const nftInfo = await fetchNftInfo(nftMint);
+
+    nftInfo.tswapOrders.sort((a, b) => a.sellNowPriceNetFees - b.sellNowPriceNetFees);
+
+    for (const order of nftInfo.tswapOrders) {
+        console.log("Order:", order.sellNowPriceNetFees);
+    }
 
     const tswapOrder = nftInfo.tswapOrders.pop();
 
@@ -80,6 +86,8 @@ const main = async () => {
         marginated: pool.margin == null ? false : true
     });
 
+    console.log("PRICE", price.toString());
+
     const wlAddr = findWhitelistPDA({uuid: collectionUUID})[0];
 
     const allIxs = [];
@@ -114,6 +122,8 @@ const main = async () => {
         return;
     }
 
+    const marginNr = pool.margin ? (await swapSdk.fetchMarginAccount(pool.margin)).nr : undefined;
+
     // Step 2: Sell Ixs.
     {
         const { tx: { ixs }, } = await swapSdk.sellNft({
@@ -124,7 +134,8 @@ const main = async () => {
             owner: pool.owner,
             seller: keypair.publicKey,
             config: pool.config,
-            minPrice: new BN(tswapOrder.sellNowPriceNetFees * 0.999),
+            minPrice: new BN(price.toString()),
+            marginNr,
         });
         allIxs.push(...ixs);
     }

@@ -33,9 +33,13 @@ const main = () => __awaiter(void 0, void 0, void 0, function* () {
     // SSS
     // const nftMint = new PublicKey("6FSB6y9yjUcCGrFbibBq9jHFhAwxSuXCgS8jLikCuNV7");
     // Toonies
-    const nftMint = new web3_js_1.PublicKey("F5ywgtM6uz8sSaGqmdiZaeV9Sx5cwVrwehUP2sxoH63w");
+    const nftMint = new web3_js_1.PublicKey("6ZGCWMAVXupC4PDiNdZqSVdq8YQ2i2fiyXzCFdt24jEf");
     const nftATA = (0, spl_token_1.getAssociatedTokenAddressSync)(nftMint, keypair.publicKey);
     const nftInfo = yield (0, nftInfo_1.fetchNftInfo)(nftMint);
+    nftInfo.tswapOrders.sort((a, b) => a.sellNowPriceNetFees - b.sellNowPriceNetFees);
+    for (const order of nftInfo.tswapOrders) {
+        console.log("Order:", order.sellNowPriceNetFees);
+    }
     const tswapOrder = nftInfo.tswapOrders.pop();
     if (tswapOrder === undefined) {
         console.error("No orders");
@@ -68,6 +72,7 @@ const main = () => __awaiter(void 0, void 0, void 0, function* () {
         slippage: 0,
         marginated: pool.margin == null ? false : true
     });
+    console.log("PRICE", price.toString());
     const wlAddr = (0, tensorswap_sdk_1.findWhitelistPDA)({ uuid: collectionUUID })[0];
     const allIxs = [];
     // Step 1: Update mint proof Ixs (optional)
@@ -96,6 +101,7 @@ const main = () => __awaiter(void 0, void 0, void 0, function* () {
         console.error("Unsupported pool type");
         return;
     }
+    const marginNr = pool.margin ? (yield swapSdk.fetchMarginAccount(pool.margin)).nr : undefined;
     // Step 2: Sell Ixs.
     {
         const { tx: { ixs }, } = yield swapSdk.sellNft({
@@ -106,7 +112,8 @@ const main = () => __awaiter(void 0, void 0, void 0, function* () {
             owner: pool.owner,
             seller: keypair.publicKey,
             config: pool.config,
-            minPrice: new anchor_1.BN(tswapOrder.sellNowPriceNetFees * 0.999),
+            minPrice: new anchor_1.BN(price.toString()),
+            marginNr,
         });
         allIxs.push(...ixs);
     }
