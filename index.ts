@@ -1,7 +1,7 @@
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { AnchorProvider, Wallet, BN } from "@project-serum/anchor";
 import { Connection, Keypair, PublicKey, SystemProgram, Transaction, sendAndConfirmTransaction } from "@solana/web3.js";
-import { TensorSwapSDK, TensorWhitelistSDK, computeTakerPrice, TakerSide, castPoolConfigAnchor, findWhitelistPDA, PoolType } from "@tensor-oss/tensorswap-sdk";
+import { TensorSwapSDK, TensorWhitelistSDK, computeTakerPrice, TakerSide, castPoolConfigAnchor, findWhitelistPDA, PoolType, castPoolConfig } from "@tensor-oss/tensorswap-sdk";
 
 import { fetchNftInfo, fetchNftMintProof } from "./nftInfo";
 
@@ -26,10 +26,10 @@ const main = async () => {
     const wlSdk = new TensorWhitelistSDK({ provider });
 
     // SSS
-    // const nftMint = new PublicKey("6FSB6y9yjUcCGrFbibBq9jHFhAwxSuXCgS8jLikCuNV7");
+    const nftMint = new PublicKey("6FSB6y9yjUcCGrFbibBq9jHFhAwxSuXCgS8jLikCuNV7");
 
     // Toonies
-    const nftMint = new PublicKey("6ZGCWMAVXupC4PDiNdZqSVdq8YQ2i2fiyXzCFdt24jEf");
+    // const nftMint = new PublicKey("6ZGCWMAVXupC4PDiNdZqSVdq8YQ2i2fiyXzCFdt24jEf");
 
     const nftATA = getAssociatedTokenAddressSync(
         nftMint,
@@ -61,8 +61,6 @@ const main = async () => {
         return;
     }
 
-    const collectionUUIDString = nftInfo.collection.id;
-
     // Remove "-" symbols from uuid, so it's within the 32 seed length limit. Additionally convert the uuid to a Uint8Array
     const collectionUUID = Buffer.from(nftInfo.collection.id.replace(/-/g, "")).toJSON().data;
 
@@ -86,9 +84,16 @@ const main = async () => {
         marginated: pool.margin == null ? false : true
     });
 
+    if (!price) {
+        console.error("No price");
+        return;
+    }
+
     console.log("PRICE", price.toString());
 
     const wlAddr = findWhitelistPDA({uuid: collectionUUID})[0];
+
+    console.log("wlAddr", wlAddr);
 
     const allIxs = [];
 
@@ -123,6 +128,8 @@ const main = async () => {
     }
 
     const marginNr = pool.margin ? (await swapSdk.fetchMarginAccount(pool.margin)).nr : undefined;
+    
+    // castPoolConfig()
 
     // Step 2: Sell Ixs.
     {
@@ -144,8 +151,8 @@ const main = async () => {
     tx.add(...allIxs);
 
     // var signature = await sendAndConfirmTransaction(conn, tx, [keypair], { skipPreflight: true });
-    var signature = await sendAndConfirmTransaction(conn, tx, [keypair]);
-    console.log('SIGNATURE:', signature);
+    // var signature = await sendAndConfirmTransaction(conn, tx, [keypair]);
+    // console.log('SIGNATURE:', signature);
 };
 
 main();

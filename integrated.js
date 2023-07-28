@@ -8,14 +8,39 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
+const big_js_1 = __importDefault(require("big.js"));
 const spl_token_1 = require("@solana/spl-token");
 const anchor_1 = require("@project-serum/anchor");
 const web3_js_1 = require("@solana/web3.js");
 const tensorswap_sdk_1 = require("@tensor-oss/tensorswap-sdk");
-const nftInfo_1 = require("./nftInfo");
 const promises_1 = require("fs/promises");
 const os_1 = require("os");
+var GqlCurveType;
+(function (GqlCurveType) {
+    GqlCurveType["Exponential"] = "EXPONENTIAL";
+    GqlCurveType["Linear"] = "LINEAR";
+    GqlCurveType["Xyk"] = "XYK";
+})(GqlCurveType || (GqlCurveType = {}));
+const curveTypeMap = {
+    [GqlCurveType.Exponential]: tensorswap_sdk_1.CurveType.Exponential,
+    [GqlCurveType.Linear]: tensorswap_sdk_1.CurveType.Linear,
+    [GqlCurveType.Xyk]: undefined
+};
+var GqlPoolType;
+(function (GqlPoolType) {
+    GqlPoolType["Nft"] = "NFT";
+    GqlPoolType["Token"] = "TOKEN";
+    GqlPoolType["Trade"] = "TRADE";
+})(GqlPoolType || (GqlPoolType = {}));
+const poolTypeMap = {
+    [GqlPoolType.Nft]: tensorswap_sdk_1.PoolType.NFT,
+    [GqlPoolType.Token]: tensorswap_sdk_1.PoolType.Token,
+    [GqlPoolType.Trade]: tensorswap_sdk_1.PoolType.Trade,
+};
 function readJsonFile(path) {
     return __awaiter(this, void 0, void 0, function* () {
         const file = yield (0, promises_1.readFile)(path, "utf8");
@@ -31,69 +56,60 @@ const main = () => __awaiter(void 0, void 0, void 0, function* () {
     const swapSdk = new tensorswap_sdk_1.TensorSwapSDK({ provider });
     const wlSdk = new tensorswap_sdk_1.TensorWhitelistSDK({ provider });
     // SSS
-    const nftMint = new web3_js_1.PublicKey("6FSB6y9yjUcCGrFbibBq9jHFhAwxSuXCgS8jLikCuNV7");
+    // const nftMint = new PublicKey("6FSB6y9yjUcCGrFbibBq9jHFhAwxSuXCgS8jLikCuNV7");
     // Toonies
-    // const nftMint = new PublicKey("6ZGCWMAVXupC4PDiNdZqSVdq8YQ2i2fiyXzCFdt24jEf");
+    const nftMint = new web3_js_1.PublicKey("8Mwz6ctSiz2hqjdHKcX1bbCWBJHSRDFsijbH8M9TzuhG");
     const nftATA = (0, spl_token_1.getAssociatedTokenAddressSync)(nftMint, keypair.publicKey);
-    const nftInfo = yield (0, nftInfo_1.fetchNftInfo)(nftMint);
-    nftInfo.tswapOrders.sort((a, b) => a.sellNowPriceNetFees - b.sellNowPriceNetFees);
-    for (const order of nftInfo.tswapOrders) {
-        console.log("Order:", order.sellNowPriceNetFees);
-    }
-    const tswapOrder = nftInfo.tswapOrders.pop();
+    const response = yield fetch(`http://localhost:3000/tensor_swap?mint=${nftMint}`);
+    const nftagResponse = yield response.json();
+    console.log("nftag response", nftagResponse);
+    const tswapOrder = nftagResponse.order;
     if (tswapOrder === undefined) {
         console.error("No orders");
         return;
     }
-    if (nftInfo.collection === undefined || nftInfo.collection === null) {
-        console.error("Can't find collection");
-        return;
-    }
-    if (nftInfo.collection.id === undefined) {
-        console.error("Collection has no id");
-        return;
-    }
-    // Remove "-" symbols from uuid, so it's within the 32 seed length limit. Additionally convert the uuid to a Uint8Array
-    const collectionUUID = Buffer.from(nftInfo.collection.id.replace(/-/g, "")).toJSON().data;
-    // Fetch the pool PDA for its settings.
-    const pool = yield swapSdk.fetchPool(new web3_js_1.PublicKey(tswapOrder.address));
-    const config = (0, tensorswap_sdk_1.castPoolConfigAnchor)(pool.config);
-    const price = (0, tensorswap_sdk_1.computeTakerPrice)({
-        takerSide: tensorswap_sdk_1.TakerSide.Sell,
-        extraNFTsSelected: 0,
-        // These fields can be extracted from the pool object above.
-        config,
-        takerSellCount: pool.takerSellCount,
-        takerBuyCount: pool.takerBuyCount,
-        maxTakerSellCount: pool.maxTakerSellCount,
-        statsTakerSellCount: pool.stats.takerSellCount,
-        statsTakerBuyCount: pool.stats.takerBuyCount,
-        slippage: 0,
-        marginated: pool.margin == null ? false : true
-    });
-    if (!price) {
+    const price = tswapOrder.sellNowPrice;
+    if (price === undefined) {
         console.error("No price");
         return;
     }
-    console.log("PRICE", price.toString());
-    const wlAddr = (0, tensorswap_sdk_1.findWhitelistPDA)({ uuid: collectionUUID })[0];
-    console.log("wlAddr", wlAddr);
+    else {
+        console.log("Target price:", price);
+    }
+    const curveType = curveTypeMap[tswapOrder.curveType];
+    if (curveType === undefined) {
+        console.error("Unsupported curve type");
+        return;
+    }
+    const config = {
+        poolType: poolTypeMap[tswapOrder.poolType],
+        curveType: curveType,
+        startingPrice: new big_js_1.default(tswapOrder.startingPrice),
+        delta: new big_js_1.default(tswapOrder.delta),
+        mmCompoundFees: tswapOrder.mmCompoundFees,
+        mmFeeBps: tswapOrder.mmFeeBps ? parseInt(tswapOrder.mmFeeBps) : null,
+    };
     const allIxs = [];
+    const whitelistAddr = new web3_js_1.PublicKey(tswapOrder.whitelistAddress);
     // Step 1: Update mint proof Ixs (optional)
     {
-        const whitelist = yield wlSdk.fetchWhitelist(wlAddr);
+        const whitelist = yield wlSdk.fetchWhitelist(whitelistAddr);
         // Proof is only required if rootHash is NOT a 0 array, o/w not necessary!
         if (JSON.stringify(whitelist.rootHash) !== JSON.stringify(Array(32).fill(0))) {
-            console.log('Fetching proof...');
-            // Off-chain merkle proof (see "Mint Proof" API endpoint below).
-            const proof = yield (0, nftInfo_1.fetchNftMintProof)(nftMint, wlAddr);
+            console.log('Preparing update mint proof Ixs...');
+            // Off-chain merkle proof
+            if (!nftagResponse.proof) {
+                console.error("No mint proof");
+                return;
+            }
+            const proof = Buffer.from(nftagResponse.proof);
             const user = keypair.publicKey;
             const mint = new web3_js_1.PublicKey(nftMint);
             const { tx: { ixs } } = yield wlSdk.initUpdateMintProof({
                 user,
-                whitelist: wlAddr,
+                whitelist: whitelistAddr,
                 mint,
-                proof: proof.proof
+                proof: [proof],
             });
             allIxs.push(...ixs);
         }
@@ -105,20 +121,18 @@ const main = () => __awaiter(void 0, void 0, void 0, function* () {
         console.error("Unsupported pool type");
         return;
     }
-    const marginNr = pool.margin ? (yield swapSdk.fetchMarginAccount(pool.margin)).nr : undefined;
-    // castPoolConfig()
     // Step 2: Sell Ixs.
     {
         const { tx: { ixs }, } = yield swapSdk.sellNft({
             type: config.poolType === tensorswap_sdk_1.PoolType.Token ? "token" : "trade",
-            whitelist: wlAddr,
+            whitelist: whitelistAddr,
             nftMint: nftMint,
             nftSellerAcc: nftATA,
-            owner: pool.owner,
+            owner: new web3_js_1.PublicKey(tswapOrder.ownerAddress),
             seller: keypair.publicKey,
-            config: pool.config,
-            minPrice: new anchor_1.BN(price.toString()),
-            marginNr,
+            config: (0, tensorswap_sdk_1.castPoolConfig)(config),
+            minPrice: new anchor_1.BN(price),
+            marginNr: tswapOrder.marginNr,
         });
         allIxs.push(...ixs);
     }
